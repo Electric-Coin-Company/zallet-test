@@ -1,0 +1,292 @@
+name: Build and deploy Debian packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v1.2.3)"
+        required: true
+        type: string
+      git-sha:
+        description: "Source commit SHA"
+        required: true
+        type: string
+      oci-artifact-name:
+        description: "Name of the OCI runtime image artifact to consume"
+        required: true
+        type: string
+      image-tag:
+        description: "Tag applied to the runtime image when importing via make"
+        required: true
+        type: string
+    secrets:
+      GCP_SA_KEY:
+        required: true
+      GCP_PROJECT_ID_PROD:
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v1.2.3)"
+        required: true
+        type: string
+      git-sha:
+        description: "Source commit SHA"
+        required: true
+        type: string
+      oci-artifact-name:
+        description: "Name of the OCI runtime image artifact to consume"
+        required: true
+        type: string
+      image-tag:
+        description: "Tag applied to the runtime image when importing via make"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Prevent concurrent runs for the same tag from racing (e.g., re-runs)
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and deploy Zallet ${{ matrix.name }} package to apt.z.cash
+    runs-on: ubuntu-latest
+
+    # Required permissions for Release upload + OIDC/Sigstore attestation
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    strategy:
+      matrix:
+        name:
+          - bullseye-amd64
+          - bookworm-amd64
+
+        include:
+          - name: bullseye-amd64
+            debian: bullseye
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+
+          - name: bookworm-amd64
+            debian: bookworm
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+      RELEASE_SHA: ${{ inputs.git-sha || github.sha }}
+      IMAGE_TAG: ${{ inputs.image-tag }}
+      OCI_ARTIFACT_NAME: ${{ inputs.oci-artifact-name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libclang-dev \
+            aptly \
+            make \
+            python3 \
+            python3-distutils \
+            lsb-release \
+            apt-transport-https \
+            ca-certificates \
+            gnupg \
+            curl \
+            wget
+
+      - name: Install gcloud SDK
+        run: |
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+            | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+          curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+            | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+          sudo apt-get update
+          sudo apt-get install -y google-cloud-sdk
+
+      - name: Authenticate with gcloud using process substitution
+        run: |
+          gcloud auth activate-service-account --key-file=<(echo "${{ secrets.GCP_SA_KEY }}" | base64 -d)
+
+      - name: Download encrypted signing key
+        run: gsutil -q cp gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-packages/encrypted_gpg.kms encrypted_gpg.kms
+
+      - name: Decrypt signing key via KMS
+        run: |
+          gcloud kms decrypt \
+            --key gpg \
+            --project ${{ secrets.GCP_PROJECT_ID_PROD }} \
+            --keyring gpg \
+            --location global \
+            --plaintext-file private.pgp \
+            --ciphertext-file encrypted_gpg.kms
+
+      - name: Import GPG keys
+        run: |
+          gpg --import private.pgp
+          wget -qO - https://apt.z.cash/zcash.asc | gpg --no-default-keyring --keyring trustedkeys.gpg --import
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Prepare OCI artifact workspace
+        run: mkdir -p build/oci
+
+      - name: Download runtime OCI artifact
+        uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.OCI_ARTIFACT_NAME }}
+          path: build/oci
+
+      - name: Import runtime image via Makefile
+        run: make import
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+
+      - name: Extract binary from imported runtime image
+        run: |
+          set -euo pipefail
+          CID=$(docker create zallet:${IMAGE_TAG} /usr/local/bin/zallet)
+          docker cp "$CID:/usr/local/bin/zallet" build/zallet
+          docker rm "$CID"
+
+      - name: Prepare standalone binary artifact
+        if: matrix.name == 'bullseye-amd64'
+        run: |
+          set -euo pipefail
+          mkdir -p standalone
+          cp build/zallet "standalone/zallet-${RELEASE_VERSION}-linux-amd64"
+
+      - name: GPG sign standalone binary
+        if: matrix.name == 'bullseye-amd64'
+        run: |
+          gpg -u sysadmin@z.cash --armor --digest-algo SHA256 --detach-sign "standalone/zallet-${RELEASE_VERSION}-linux-amd64"
+
+      - name: Generate build provenance attestation for binary
+        if: matrix.name == 'bullseye-amd64'
+        id: binary-attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: standalone/zallet-${RELEASE_VERSION}-linux-amd64
+
+      - name: Save binary attestation bundle
+        if: matrix.name == 'bullseye-amd64'
+        env:
+          BUNDLE_PATH: ${{ steps.binary-attest.outputs['bundle-path'] }}
+        run: |
+          cp -- "$BUNDLE_PATH" "standalone/zallet-${RELEASE_VERSION}-linux-amd64.intoto.jsonl"
+
+      - name: Upload standalone binary artifacts
+        if: matrix.name == 'bullseye-amd64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zallet-binary-${{ env.RELEASE_VERSION }}
+          path: standalone/*
+
+      - name: Seed cargo target tree with imported binary
+        run: |
+          set -euo pipefail
+          TARGET_DIR="target/${{ matrix.target }}/release"
+          mkdir -p "$TARGET_DIR"
+          install -m 0755 build/zallet "$TARGET_DIR/zallet"
+
+      - name: Build package (cargo deb --no-build)
+        run: |
+          cargo deb --no-build --target ${{ matrix.target }}
+
+      - name: Rename package to not collide across the matrix
+        run: |
+          mv target/debian/zallet_*.deb ./
+          mv zallet_*.deb "$(basename -s .deb zallet_*.deb)_${{ matrix.debian }}.deb"
+
+      - name: Mirror apt.z.cash
+        run: |
+          aptly mirror create zcash https://apt.z.cash ${{ matrix.debian }}
+
+      - name: Create local snapshot of apt.z.cash with zallet
+        run: |
+          aptly repo create --distribution ${{ matrix.debian }} --component main zcash_local
+          aptly repo add zcash_local zallet_*.deb
+          aptly mirror update zcash
+          aptly snapshot create snapshot_zcash from mirror zcash
+          aptly snapshot create snapshot_local from repo zcash_local
+          aptly snapshot merge snapshot_combined snapshot_zcash snapshot_local
+
+      - name: Sign & publish snapshot of local apt repository
+        run: |
+          export key=$(gpg --list-secret-keys --keyid-format=long sysadmin@z.cash | head -n 2 | grep -v sec)
+          aptly publish snapshot -architectures=${{ matrix.arch }} -gpg-key="$key" snapshot_combined
+
+      - name: Upload snapshot to the apt.z.cash bucket for approval
+        run: |
+          gsutil -q -m rsync -r $HOME/.aptly/public/pool/main/z/zallet/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/pool/main/z/zallet/
+          gsutil -q -m rsync -r $HOME/.aptly/public/dists/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/dists/
+
+      - name: Prepare Signature artifacts
+        run: |
+          mkdir artifacts
+          mv zallet_*.deb artifacts/
+          cd artifacts
+          gpg -u sysadmin@z.cash --armor --digest-algo SHA256 --detach-sign zallet_*.deb
+
+      - name: Generate build provenance attestation for .deb
+        id: attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: artifacts/zallet_*.deb
+
+      - name: Make attestation filename unique
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs['bundle-path'] }}
+        run: |
+          FILENAME=$(basename artifacts/zallet_*.deb)
+          cp -- "$BUNDLE_PATH" "artifacts/${FILENAME}.intoto.jsonl"
+
+      - name: Upload artifacts for publish job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: artifacts-${{ matrix.name }}
+          path: artifacts/*
+
+  publish:
+    name: Create/Update GitHub Release (aggregate)
+    needs: release
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish/Update GitHub Release (incremental)
+        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
+        with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          generate_release_notes: true
+          append_body: true
+          overwrite_files: true
+          files: artifacts/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
