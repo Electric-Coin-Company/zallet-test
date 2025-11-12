@@ -39,7 +39,7 @@ jobs:
     needs: set_env
     uses: ./.github/workflows/build-and-push-docker-hub.yaml
     with:
-      image_name: zallet
+      image_name: test-release-zallet
       image_tags: ${{ needs.set_env.outputs.tags }}
       dockerfile: Dockerfile
       context: .
