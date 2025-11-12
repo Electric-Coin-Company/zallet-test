@@ -115,7 +115,6 @@ jobs:
 
       - name: Log in to Docker registry
         env:
-          REGISTRY: ${{ env.REGISTRY }}
           USERNAME: ${{ secrets.dockerhub_username }}
           PASSWORD: ${{ secrets.dockerhub_password }}
         run: |
@@ -124,7 +123,7 @@ jobs:
             echo "Missing Docker Hub credentials" >&2
             exit 1
           fi
-          echo "$PASSWORD" | docker login "$REGISTRY" -u "$USERNAME" --password-stdin
+          echo "$PASSWORD" | docker login -u "$USERNAME" --password-stdin
 
       - name: Build & Push (SBOM + provenance)
         id: build
