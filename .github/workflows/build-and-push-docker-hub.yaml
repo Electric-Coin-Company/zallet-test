@@ -126,6 +126,7 @@ jobs:
       - name: Set up Docker Buildx (containerd image store)
         uses: docker/setup-buildx-action@v3
         with:
+          driver: docker
           driver-opts: |
             image-store=containerd
 
