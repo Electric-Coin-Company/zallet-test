@@ -41,7 +41,7 @@ jobs:
     if: needs.set_env.outputs.should_run == 'true'
     uses: ./.github/workflows/build-and-push-docker-hub.yaml
     with:
-      image_name: zallet
+      image_name: zallet-test
       image_tags: ${{ needs.set_env.outputs.tags }}
       dockerfile: Dockerfile
       context: .
