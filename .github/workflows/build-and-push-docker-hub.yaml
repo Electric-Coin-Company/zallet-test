@@ -113,9 +113,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Enable containerd image store
-        uses: depot/use-containerd-snapshotter-action@v1
-
       - name: Log in to Docker registry
         env:
           REGISTRY: ${{ env.REGISTRY }}
