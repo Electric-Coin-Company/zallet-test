@@ -232,10 +232,10 @@ jobs:
           export key=$(gpg --list-secret-keys --keyid-format=long sysadmin@z.cash | head -n 2 | grep -v sec)
           aptly publish snapshot -architectures=${{ matrix.arch }} -gpg-key="$key" snapshot_combined
 
-      - name: Upload snapshot to the apt.z.cash bucket for approval
-        run: |
-          gsutil -q -m rsync -r $HOME/.aptly/public/pool/main/z/zallet/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/pool/main/z/zallet/
-          gsutil -q -m rsync -r $HOME/.aptly/public/dists/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/dists/
+      #- name: Upload snapshot to the apt.z.cash bucket for approval
+        #run: |
+          #gsutil -q -m rsync -r $HOME/.aptly/public/pool/main/z/zallet/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/pool/main/z/zallet/
+          #gsutil -q -m rsync -r $HOME/.aptly/public/dists/ gs://${{ secrets.GCP_PROJECT_ID_PROD }}-apt-server/dists/
 
       - name: Prepare Signature artifacts
         run: |
