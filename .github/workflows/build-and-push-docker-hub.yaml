@@ -83,6 +83,21 @@ jobs:
       image-ref: ${{ steps.emit.outputs.image_ref }}
       oci-artifact-name: ${{ steps.emit.outputs.artifact_name }}
     steps:
+      - name: Normalize registry host
+        run: |
+          set -euo pipefail
+          REGISTRY="${REGISTRY:-docker.io}"
+          REGISTRY="${REGISTRY#https://}"
+          REGISTRY="${REGISTRY#http://}"
+          REGISTRY="${REGISTRY%/}"
+          if [[ -z "$REGISTRY" ]]; then
+            REGISTRY="docker.io"
+          fi
+          echo "REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+          echo "REGISTRY_HOST=$REGISTRY" >> "$GITHUB_ENV"
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+
       - name: Compute Docker image tags
         id: set-tags
         run: |
@@ -123,7 +138,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.dockerhub_registry }}
+          registry: ${{ env.REGISTRY_HOST }}
           username: ${{ secrets.dockerhub_username }}
           password: ${{ secrets.dockerhub_password }}
 
