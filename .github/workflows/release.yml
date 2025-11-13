@@ -10,9 +10,6 @@ permissions:
   id-token: write
   attestations: write
 
-env:
-  RUNTIME_IMAGE_NAME: zallet-test
-
 jobs:
   set_env:
     name: Prepare release metadata
@@ -44,7 +41,7 @@ jobs:
     if: needs.set_env.outputs.should_run == 'true'
     uses: ./.github/workflows/build-and-push-docker-hub.yaml
     with:
-      image_name: ${{ env.RUNTIME_IMAGE_NAME }}
+      image_name: zallet-test
       image_tags: ${{ needs.set_env.outputs.tags }}
       dockerfile: Dockerfile
       context: .
