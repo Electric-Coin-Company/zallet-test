@@ -138,6 +138,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare OCI export directory
+        run: mkdir -p build/oci
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
@@ -162,6 +165,9 @@ jobs:
           build-args: ${{ inputs['build-args'] }}
           sbom: true
           provenance: mode=max
+          outputs: |
+            type=registry
+            type=oci,dest=build/oci/${{ env.IMAGE_NAME }}.tar,name=${{ env.IMAGE_NAME }},rewrite-timestamp=true,force-compression=true
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
@@ -181,29 +187,6 @@ jobs:
           subject-name: ${{ env.IMAGE_FULL_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-
-      - name: Export runtime image as OCI artifact
-        env:
-          OCI_EXPORT_PATH: build/oci/${{ env.IMAGE_NAME }}.tar
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "$OCI_EXPORT_PATH")"
-
-          ARGS=()
-          if [[ -n "${BUILD_ARGS_RAW//[[:space:]]/}" ]]; then
-            while IFS= read -r ARG; do
-              [[ -z "$ARG" ]] && continue
-              ARGS+=(--build-arg "$ARG")
-            done <<< "$BUILD_ARGS_RAW"
-          fi
-
-          docker buildx build \
-            --file "${{ inputs.dockerfile }}" \
-            --platform linux/amd64 \
-            --target runtime \
-            --output type=oci,dest="$OCI_EXPORT_PATH" \
-            "${ARGS[@]}" \
-            "${{ inputs.context }}"
 
       - name: Upload OCI runtime artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
