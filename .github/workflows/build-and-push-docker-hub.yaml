@@ -170,6 +170,7 @@ jobs:
         with:
           subject-name: ${{ env.IMAGE_FULL_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Export runtime image as OCI artifact
         env:
