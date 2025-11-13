@@ -191,7 +191,8 @@ jobs:
           set -euo pipefail
           SRC="build/oci/${IMAGE_NAME}.tar"
           TMP="${SRC}.docker"
-          skopeo copy "oci-archive:${SRC}" "docker-archive:${TMP}"
+          SOURCE_REF="oci-archive:${SRC}:${IMAGE_NAME}"
+          skopeo copy "$SOURCE_REF" "docker-archive:${TMP}"
           mv "$TMP" "$SRC"
 
       - name: Import runtime image via Makefile
