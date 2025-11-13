@@ -19,6 +19,10 @@ on:
         description: "Tag applied to the runtime image when importing via make"
         required: true
         type: string
+      image-name:
+        description: "Name of the runtime image (used for artifact file names)"
+        required: true
+        type: string
     secrets:
       GCP_SA_KEY:
         required: true
@@ -40,6 +44,10 @@ on:
         type: string
       image-tag:
         description: "Tag applied to the runtime image when importing via make"
+        required: true
+        type: string
+      image-name:
+        description: "Name of the runtime image (used for artifact file names)"
         required: true
         type: string
 
@@ -93,6 +101,7 @@ jobs:
       RELEASE_SHA: ${{ inputs.git-sha || github.sha }}
       IMAGE_TAG: ${{ inputs.image-tag }}
       OCI_ARTIFACT_NAME: ${{ inputs.oci-artifact-name }}
+      IMAGE_NAME: ${{ inputs.image-name }}
 
     steps:
       - name: Checkout
@@ -159,7 +168,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: .
+          path: build/oci
 
       - name: Normalize runtime OCI archive path
         run: |
@@ -170,7 +179,7 @@ jobs:
             find build/oci -maxdepth 3 -type f -print || true
             exit 1
           fi
-          DEST="build/oci/zallet.tar"
+          DEST="build/oci/${IMAGE_NAME}.tar"
           if [[ "$TAR_PATH" != "$DEST" ]]; then
             rm -f "$DEST"
             mv "$TAR_PATH" "$DEST"
@@ -180,6 +189,7 @@ jobs:
         run: make import
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
 
       - name: Extract binary from imported runtime image
         run: |

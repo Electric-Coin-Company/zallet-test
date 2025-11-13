@@ -23,5 +23,5 @@ build:
 
 .PHONY: import
 import:
-	docker load -i build/oci/zallet.tar
+	docker load -i build/oci/$(IMAGE_NAME).tar
 	docker tag $(IMAGE_NAME):latest $(IMAGE_NAME):$(IMAGE_TAG)

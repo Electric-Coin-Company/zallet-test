@@ -62,6 +62,7 @@ jobs:
       git-sha: ${{ github.sha }}
       oci-artifact-name: ${{ needs.container.outputs.oci-artifact-name }}
       image-tag: ${{ github.ref_name }}
+      image-name: zallet-test
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}
