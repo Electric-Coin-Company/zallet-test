@@ -1,8 +1,8 @@
 # Makefile
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
-IMAGE_NAME := zallet
-IMAGE_TAG := latest
+IMAGE_NAME ?= zallet
+IMAGE_TAG ?= latest
 
 .PHONY: all build import
 all: build import
