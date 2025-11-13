@@ -67,17 +67,26 @@ jobs:
         name:
           - bullseye-amd64
           - bookworm-amd64
+          - trixie-amd64
 
         include:
           - name: bullseye-amd64
             debian: bullseye
             arch: amd64
             target: x86_64-unknown-linux-gnu
+            primary: true
 
           - name: bookworm-amd64
             debian: bookworm
             arch: amd64
             target: x86_64-unknown-linux-gnu
+            primary: false
+
+          - name: trixie-amd64
+            debian: trixie
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+            primary: false
 
     env:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
@@ -164,34 +173,42 @@ jobs:
           docker cp "$CID:/usr/local/bin/zallet" build/zallet
           docker rm "$CID"
 
+      - name: Smoke test binary in bullseye container
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/build/zallet":/usr/local/bin/zallet:ro \
+            debian:bullseye-slim \
+            /usr/local/bin/zallet -h
+
       - name: Prepare standalone binary artifact
-        if: matrix.name == 'bullseye-amd64'
+        if: matrix.primary
         run: |
           set -euo pipefail
           mkdir -p standalone
           cp build/zallet "standalone/zallet-${RELEASE_VERSION}-linux-amd64"
 
       - name: GPG sign standalone binary
-        if: matrix.name == 'bullseye-amd64'
+        if: matrix.primary
         run: |
           gpg -u sysadmin@z.cash --armor --digest-algo SHA256 --detach-sign "standalone/zallet-${RELEASE_VERSION}-linux-amd64"
 
       - name: Generate build provenance attestation for binary
-        if: matrix.name == 'bullseye-amd64'
+        if: matrix.primary
         id: binary-attest
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: standalone/zallet-${RELEASE_VERSION}-linux-amd64
 
       - name: Save binary attestation bundle
-        if: matrix.name == 'bullseye-amd64'
+        if: matrix.primary
         env:
           BUNDLE_PATH: ${{ steps.binary-attest.outputs['bundle-path'] }}
         run: |
           cp -- "$BUNDLE_PATH" "standalone/zallet-${RELEASE_VERSION}-linux-amd64.intoto.jsonl"
 
       - name: Upload standalone binary artifacts
-        if: matrix.name == 'bullseye-amd64'
+        if: matrix.primary
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: zallet-binary-${{ env.RELEASE_VERSION }}
