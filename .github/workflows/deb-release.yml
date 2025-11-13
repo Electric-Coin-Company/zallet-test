@@ -159,7 +159,22 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: build/oci
+          path: .
+
+      - name: Normalize runtime OCI archive path
+        run: |
+          set -euo pipefail
+          TAR_PATH="$(find build/oci -type f -name '*.tar' | head -n 1 || true)"
+          if [[ -z "$TAR_PATH" ]]; then
+            echo "Unable to locate downloaded OCI archive under build/oci" >&2
+            find build/oci -maxdepth 3 -type f -print || true
+            exit 1
+          fi
+          DEST="build/oci/zallet.tar"
+          if [[ "$TAR_PATH" != "$DEST" ]]; then
+            rm -f "$DEST"
+            mv "$TAR_PATH" "$DEST"
+          fi
 
       - name: Import runtime image via Makefile
         run: make import
