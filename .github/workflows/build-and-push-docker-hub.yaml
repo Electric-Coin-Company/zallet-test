@@ -211,7 +211,6 @@ jobs:
           provenance: mode=max
           outputs: |
             type=registry,rewrite-timestamp=true,force-compression=true
-            type=oci,name=${{ env.IMAGE_NAME }},rewrite-timestamp=true,force-compression=true
 
       - name: Export binaries per platform
         env:
@@ -252,7 +251,7 @@ jobs:
               --file "$DOCKERFILE" \
               --platform "$PLATFORM_TRIMMED" \
               --target export \
-              --output "type=local,dest=${DEST}" \
+              --output "type=local,dest=${DEST},rewrite-timestamp=true,force-compression=true" \
               "${ARGS[@]}" \
               "$CONTEXT"
 
