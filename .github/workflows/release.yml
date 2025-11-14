@@ -17,14 +17,37 @@ jobs:
     outputs:
       tags: ${{ steps.version_step.outputs.tags }}
       should_run: ${{ steps.version_step.outputs.should_run }}
+      platforms: ${{ steps.version_step.outputs.platforms }}
+      smoke_distro: ${{ steps.version_step.outputs.smoke_distro }}
+      apt_distributions: ${{ steps.version_step.outputs.apt_distributions }}
     env:
       VERSION: ${{ github.ref_name }}
       SHA: ${{ github.sha }}
+      PLATFORM_LIST: linux/amd64 #TODO: linux/amd64,linux/arm64
+      SMOKE_TEST_DISTRO: bullseye
+      APT_DISTRIBUTIONS: bullseye,bookworm # TODO bullseye,bookworm,trixie
     steps:
       - id: version_step
         run: |
           set -Eeuo pipefail
           IFS=$'\n\t'
+
+          PLATFORM_STRING="${PLATFORM_LIST//$'\n'/,}"
+          PLATFORM_STRING="${PLATFORM_STRING// /}"
+          if [[ -z "$PLATFORM_STRING" ]]; then
+            echo "Platform list cannot be empty" >&2
+            exit 1
+          fi
+          echo "platforms=${PLATFORM_STRING}" >> "$GITHUB_OUTPUT"
+          echo "smoke_distro=${SMOKE_TEST_DISTRO}" >> "$GITHUB_OUTPUT"
+          APT_LIST_NORMALIZED="${APT_DISTRIBUTIONS//$'\r'/}"
+          APT_LIST_NORMALIZED="${APT_LIST_NORMALIZED//$'\n'/,}"
+          APT_LIST_NORMALIZED="${APT_LIST_NORMALIZED// /}"
+          if [[ -z "$APT_LIST_NORMALIZED" ]]; then
+            echo "APT distribution list cannot be empty" >&2
+            exit 1
+          fi
+          echo "apt_distributions=${APT_LIST_NORMALIZED}" >> "$GITHUB_OUTPUT"
 
           if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]]; then
             echo "Valid version: $VERSION"
@@ -46,7 +69,7 @@ jobs:
       dockerfile: Dockerfile
       context: .
       build-args: ""
-      platforms: linux/amd64
+      platforms: ${{ needs.set_env.outputs.platforms }}
       oci-artifact-name: ${{ format('zallet-runtime-oci-{0}', github.run_id) }}
     secrets:
       dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -62,6 +85,9 @@ jobs:
       version: ${{ github.ref_name }}
       git-sha: ${{ github.sha }}
       oci-artifact-name: ${{ needs.container.outputs.oci-artifact-name }}
+      platforms: ${{ needs.container.outputs.platforms }}
+      smoke-distro: ${{ needs.set_env.outputs.smoke_distro }}
+      apt-distributions: ${{ needs.set_env.outputs.apt_distributions }}
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
       GCP_PROJECT_ID_PROD: ${{ secrets.GCP_PROJECT_ID_PROD }}

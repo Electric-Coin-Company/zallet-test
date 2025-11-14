@@ -12,6 +12,9 @@ on:
       oci-artifact-name:
         description: "Name of the exported runtime OCI artifact"
         value: ${{ jobs.build-and-push.outputs.oci-artifact-name }}
+      platforms:
+        description: "Resolved platform list used for the build"
+        value: ${{ jobs.build-and-push.outputs.platforms }}
     inputs:
       image_name:
         description: "Docker image name (e.g. user/repo)"
@@ -103,6 +106,7 @@ jobs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-ref: ${{ steps.emit.outputs.image_ref }}
       oci-artifact-name: ${{ steps.emit.outputs.artifact_name }}
+      platforms: ${{ steps.platforms.outputs.platforms }}
     steps:
       - name: Determine image repository
         run: |
@@ -178,7 +182,7 @@ jobs:
           persist-credentials: false
 
       - name: Prepare export directory
-        run: mkdir -p build
+        run: mkdir -p build/runtime
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -207,16 +211,54 @@ jobs:
           provenance: mode=max
           outputs: type=registry,rewrite-timestamp=true,force-compression=true
 
-      - name: Extract binary from export stage
-        id: export-binary
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          file: ${{ inputs.dockerfile }}
-          context: ${{ inputs.context }}
-          platforms: ${{ steps.platforms.outputs.primary }}
-          target: export
-          push: false
-          outputs: type=local,dest=./build,rewrite-timestamp=true,force-compression=true
+      - name: Export binaries per platform
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          CONTEXT: ${{ inputs.context }}
+          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
+          BUILD_ARGS_RAW: ${{ env.BUILD_ARGS_RAW }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PLATFORMS:-}" ]]; then
+            echo "No target platforms available for export" >&2
+            exit 1
+          fi
+
+          mapfile -t BUILD_ARGS < <(printf "%s\n" "${BUILD_ARGS_RAW:-}" | sed 's/\r$//' | sed '/^\s*$/d')
+          mkdir -p build/runtime
+          printf '%s\n' "$PLATFORMS" | tr ',' '\n' > build/runtime/PLATFORMS
+
+          IFS=',' read -ra PLATFORM_LIST <<< "$PLATFORMS"
+          for PLATFORM in "${PLATFORM_LIST[@]}"; do
+            PLATFORM_TRIMMED="$(echo "$PLATFORM" | xargs)"
+            [[ -z "$PLATFORM_TRIMMED" ]] && continue
+            PLATFORM_KEY="${PLATFORM_TRIMMED//\//-}"
+            DEST="build/runtime/${PLATFORM_KEY}"
+            rm -rf "$DEST"
+            mkdir -p "$DEST"
+
+            ARGS=()
+            for ARG in "${BUILD_ARGS[@]}"; do
+              ARG_TRIMMED="$(echo "$ARG" | xargs)"
+              [[ -z "$ARG_TRIMMED" ]] && continue
+              ARGS+=("--build-arg" "$ARG_TRIMMED")
+            done
+
+            echo "Exporting binaries for ${PLATFORM_TRIMMED} -> ${DEST}"
+            docker buildx build \
+              --file "$DOCKERFILE" \
+              --platform "$PLATFORM_TRIMMED" \
+              --target export \
+              --output "type=local,dest=${DEST},rewrite-timestamp=true,force-compression=true" \
+              "${ARGS[@]}" \
+              "$CONTEXT"
+
+            if [[ ! -s "${DEST}/zallet" ]]; then
+              echo "Export failed for ${PLATFORM_TRIMMED}: missing zallet binary" >&2
+              exit 1
+            fi
+          done
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
@@ -241,9 +283,7 @@ jobs:
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: |
-            build/zallet
-            build/zallet.bash
+          path: build/runtime
           if-no-files-found: error
 
       - name: Emit workflow outputs
@@ -251,6 +291,8 @@ jobs:
         run: |
           echo "image_ref=${IMAGE_FULL_NAME}" >> "$GITHUB_OUTPUT"
           echo "artifact_name=${OCI_ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "platforms=${RESOLVED_PLATFORMS}" >> "$GITHUB_OUTPUT"
         env:
           IMAGE_FULL_NAME: ${{ env.IMAGE_FULL_NAME }}
           OCI_ARTIFACT_NAME: ${{ env.OCI_ARTIFACT_NAME }}
+          RESOLVED_PLATFORMS: ${{ steps.platforms.outputs.platforms }}
