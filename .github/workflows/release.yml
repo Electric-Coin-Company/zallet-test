@@ -80,7 +80,7 @@ jobs:
     name: Build Debian packages from exported binaries
     needs: [set_env, container]
     if: needs.set_env.outputs.should_run == 'true'
-    uses: ./.github/workflows/deb-release.yml
+    uses: ./.github/workflows/deb-artifacts-release.yml
     with:
       version: ${{ github.ref_name }}
       git-sha: ${{ github.sha }}
