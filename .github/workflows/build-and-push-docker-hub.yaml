@@ -169,6 +169,17 @@ jobs:
             type=registry,rewrite-timestamp=true,force-compression=true
             type=oci,dest=build/oci/${{ env.IMAGE_NAME }}.tar,name=${{ env.IMAGE_NAME }},rewrite-timestamp=true,force-compression=true
 
+      - name: Extract binary from export stage
+        id: export-binary
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          file: ${{ inputs.dockerfile }}
+          context: ${{ inputs.context }}
+          platforms: ${{ env.PLATFORM }}
+          target: export
+          push: false
+          outputs: type=local,dest=./build
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
