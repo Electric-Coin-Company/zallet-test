@@ -12,15 +12,7 @@ on:
         required: true
         type: string
       oci-artifact-name:
-        description: "Name of the OCI runtime image artifact to consume"
-        required: true
-        type: string
-      image-tag:
-        description: "Tag applied to the runtime image when importing via make"
-        required: true
-        type: string
-      image-name:
-        description: "Name of the runtime image (used for artifact file names)"
+        description: "Name of the exported binaries artifact to consume"
         required: true
         type: string
     secrets:
@@ -39,15 +31,7 @@ on:
         required: true
         type: string
       oci-artifact-name:
-        description: "Name of the OCI runtime image artifact to consume"
-        required: true
-        type: string
-      image-tag:
-        description: "Tag applied to the runtime image when importing via make"
-        required: true
-        type: string
-      image-name:
-        description: "Name of the runtime image (used for artifact file names)"
+        description: "Name of the exported binaries artifact to consume"
         required: true
         type: string
 
@@ -99,9 +83,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
       RELEASE_SHA: ${{ inputs.git-sha || github.sha }}
-      IMAGE_TAG: ${{ inputs.image-tag }}
       OCI_ARTIFACT_NAME: ${{ inputs.oci-artifact-name }}
-      IMAGE_NAME: ${{ inputs.image-name }}
 
     steps:
       - name: Checkout
@@ -125,8 +107,7 @@ jobs:
             ca-certificates \
             gnupg \
             curl \
-            wget \
-            skopeo
+            wget
 
       - name: Install gcloud SDK
         run: |
@@ -162,52 +143,33 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb
 
-      - name: Prepare OCI artifact workspace
-        run: mkdir -p build/oci
-
-      - name: Download runtime OCI artifact
+      - name: Download exported binaries artifact
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: build/oci
+          path: build/runtime-artifact
 
-      # - name: Normalize runtime OCI archive path
-      #   run: |
-      #     set -euo pipefail
-      #     TAR_PATH="$(find build/oci -type f -name '*.tar' | head -n 1 || true)"
-      #     if [[ -z "$TAR_PATH" ]]; then
-      #       echo "Unable to locate downloaded OCI archive under build/oci" >&2
-      #       find build/oci -maxdepth 3 -type f -print || true
-      #       exit 1
-      #     fi
-      #     DEST="build/oci/${IMAGE_NAME}.tar"
-      #     if [[ "$TAR_PATH" != "$DEST" ]]; then
-      #       rm -f "$DEST"
-      #       mv "$TAR_PATH" "$DEST"
-      #     fi
-
-      - name: Convert OCI archive to docker format
+      - name: Stage exported binaries
         run: |
           set -euo pipefail
-          SRC="build/oci/${IMAGE_NAME}.tar"
-          TMP="${SRC}.docker"
-          SOURCE_REF="oci-archive:${SRC}:latest"
-          skopeo copy "$SOURCE_REF" "docker-archive:${TMP}:${IMAGE_NAME}:latest"
-          mv "$TMP" "$SRC"
+          ARTIFACT_ROOT="build/runtime-artifact/${OCI_ARTIFACT_NAME}"
+          if [[ ! -d "$ARTIFACT_ROOT" ]]; then
+            echo "Unable to find downloaded artifact directory at $ARTIFACT_ROOT" >&2
+            ls -R build/runtime-artifact || true
+            exit 1
+          fi
 
-      - name: Import runtime image via Makefile
-        run: make import
-        env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          mkdir -p build
+          BIN_SRC="$(find "$ARTIFACT_ROOT" -type f -name 'zallet' -print -quit || true)"
+          BASH_SRC="$(find "$ARTIFACT_ROOT" -type f -name 'zallet.bash' -print -quit || true)"
+          if [[ -z "$BIN_SRC" || -z "$BASH_SRC" ]]; then
+            echo "Missing exported binary or completions in artifact bundle" >&2
+            find "$ARTIFACT_ROOT" -maxdepth 3 -type f -print || true
+            exit 1
+          fi
 
-      # - name: Extract binary & completion from export layer of the image
-      #   run: |
-      #     set -euo pipefail
-      #     CID=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} /usr/local/bin/zallet)
-      #     docker cp "$CID:/usr/local/bin/zallet" build/zallet
-      #     docker cp "$CID:/usr/local/share/bash-completion/completions/zallet" build/zallet.bash
-      #     docker rm "$CID"
+          install -m 0755 "$BIN_SRC" build/zallet
+          install -m 0644 "$BASH_SRC" build/zallet.bash
 
       - name: Smoke test binary in bullseye container
         if: matrix.primary

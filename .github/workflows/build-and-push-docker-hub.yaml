@@ -33,8 +33,13 @@ on:
         description: "Docker build args (one per line, optional)"
         required: true
         type: string
+      platforms:
+        description: "Comma- or newline-separated list of target platforms"
+        required: false
+        default: linux/amd64
+        type: string
       oci-artifact-name:
-        description: "Artifact name for the exported OCI runtime image"
+        description: "Artifact name for the exported binaries bundle"
         required: false
         default: zallet-runtime-oci
         type: string
@@ -70,8 +75,13 @@ on:
         description: "Docker build args (one per line, optional)"
         required: true
         type: string
+      platforms:
+        description: "Comma- or newline-separated list of target platforms"
+        required: false
+        default: linux/amd64
+        type: string
       oci-artifact-name:
-        description: "Artifact name for the exported OCI runtime image"
+        description: "Artifact name for the exported binaries bundle"
         required: true
         type: string
 
@@ -133,13 +143,42 @@ jobs:
           fi
           echo "tags_fixed=$TAGS_FIXED" >> "$GITHUB_ENV"
 
+      - name: Determine target platforms
+        id: platforms
+        env:
+          RAW_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+          RAW="${RAW_PLATFORMS:-linux/amd64}"
+          RAW="${RAW//$'\r'/}"
+          RAW="${RAW//$'\n'/,}"
+          RAW="${RAW// /}"
+          PRIMARY=""
+          NORMALIZED=""
+          IFS=',' read -ra CANDIDATES <<< "$RAW"
+          for TOKEN in "${CANDIDATES[@]}"; do
+            TOKEN="${TOKEN//[$'\t\r\n ']}"
+            [[ -z "$TOKEN" ]] && continue
+            NORMALIZED+="${TOKEN},"
+            if [[ -z "$PRIMARY" ]]; then
+              PRIMARY="$TOKEN"
+            fi
+          done
+          NORMALIZED="${NORMALIZED%,}"
+          if [[ -z "$NORMALIZED" ]]; then
+            echo "No valid platforms were provided" >&2
+            exit 1
+          fi
+          echo "platforms=$NORMALIZED" >> "$GITHUB_OUTPUT"
+          echo "primary=$PRIMARY" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
 
-      - name: Prepare OCI export directory
-        run: mkdir -p build/oci
+      - name: Prepare export directory
+        run: mkdir -p build
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -161,13 +200,12 @@ jobs:
           file: ${{ inputs.dockerfile }}
           context: ${{ inputs.context }}
           push: true
+          platforms: ${{ steps.platforms.outputs.platforms }}
           tags: ${{ env.tags_fixed }}
           build-args: ${{ inputs['build-args'] }}
           sbom: true
           provenance: mode=max
-          outputs: |
-            type=registry,rewrite-timestamp=true,force-compression=true
-            type=oci,dest=build/oci/${{ env.IMAGE_NAME }}.tar,name=${{ env.IMAGE_NAME }},rewrite-timestamp=true,force-compression=true
+          outputs: type=registry,rewrite-timestamp=true,force-compression=true
 
       - name: Extract binary from export stage
         id: export-binary
@@ -175,10 +213,10 @@ jobs:
         with:
           file: ${{ inputs.dockerfile }}
           context: ${{ inputs.context }}
-          platforms: ${{ env.PLATFORM }}
+          platforms: ${{ steps.platforms.outputs.primary }}
           target: export
           push: false
-          outputs: type=local,dest=./build
+          outputs: type=local,dest=./build,rewrite-timestamp=true,force-compression=true
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
@@ -199,11 +237,13 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
-      - name: Upload OCI runtime artifact
+      - name: Upload exported binaries artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: build/oci/${{ env.IMAGE_NAME }}.tar
+          path: |
+            build/zallet
+            build/zallet.bash
           if-no-files-found: error
 
       - name: Emit workflow outputs
