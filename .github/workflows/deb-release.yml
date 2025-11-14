@@ -201,12 +201,13 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
 
-      - name: Extract binary from imported runtime image
-        run: |
-          set -euo pipefail
-          CID=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} /usr/local/bin/zallet)
-          docker cp "$CID:/usr/local/bin/zallet" build/zallet
-          docker rm "$CID"
+      # - name: Extract binary & completion from export layer of the image
+      #   run: |
+      #     set -euo pipefail
+      #     CID=$(docker create ${IMAGE_NAME}:${IMAGE_TAG} /usr/local/bin/zallet)
+      #     docker cp "$CID:/usr/local/bin/zallet" build/zallet
+      #     docker cp "$CID:/usr/local/share/bash-completion/completions/zallet" build/zallet.bash
+      #     docker rm "$CID"
 
       - name: Smoke test binary in bullseye container
         if: matrix.primary
@@ -250,12 +251,14 @@ jobs:
           name: zallet-binary-${{ env.RELEASE_VERSION }}
           path: standalone/*
 
-      - name: Seed cargo target tree with imported binary
+      - name: Seed cargo target tree with imported binary & completions
         run: |
           set -euo pipefail
           TARGET_DIR="target/${{ matrix.target }}/release"
-          mkdir -p "$TARGET_DIR"
+          COMPLETIONS_DIR="${TARGET_DIR}/completions"
+          mkdir -p "$TARGET_DIR" "$COMPLETIONS_DIR"
           install -m 0755 build/zallet "$TARGET_DIR/zallet"
+          install -m 0644 build/zallet.bash "$COMPLETIONS_DIR/zallet.bash"
 
       - name: Build package (cargo deb --no-build)
         run: |

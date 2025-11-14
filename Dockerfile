@@ -62,13 +62,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --bin zallet \
       --target ${TARGET_ARCH} \
       --features rpc-cli,zcashd-import \
-      && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zallet /usr/local/bin/zallet
-
+      && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zallet /usr/local/bin/zallet \
+      && install -D -m 0644 /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.bash \
+           /usr/local/share/zallet/completions/zallet.bash
 
 # --- Stage 2: layer for local binary extraction ---
 FROM scratch AS export
 
 COPY --from=builder /usr/local/bin/zallet /zallet
+COPY --from=builder /usr/local/share/zallet/completions/zallet.bash /zallet.bash
 
 # --- Stage 3: Minimal runtime with stagex ---
 # `stagex/core-user-runtime` sets the user to non-root by default
@@ -78,6 +80,7 @@ COPY --from=gcc  /usr/lib/libstdc++.so.6 /usr/lib/
 COPY --from=musl /lib/ld-musl-x86_64.so.1 /lib/
 COPY --from=libunwind /lib/libunwind.so.8 /lib/
 COPY --from=builder /usr/local/bin/zallet /usr/local/bin/zallet
+
 
 WORKDIR /var/lib/zallet
 
