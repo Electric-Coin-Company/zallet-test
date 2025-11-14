@@ -234,7 +234,7 @@ jobs:
         id: binary-attest
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: standalone/zallet-${RELEASE_VERSION}-linux-amd64
+          subject-path: standalone/zallet-${{ env.RELEASE_VERSION }}-linux-amd64
 
       - name: Save binary attestation bundle
         if: matrix.primary
