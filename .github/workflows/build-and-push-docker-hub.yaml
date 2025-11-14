@@ -211,22 +211,27 @@ jobs:
           provenance: mode=max
           outputs: |
             type=registry,rewrite-timestamp=true,force-compression=true
+            type=local,dest=./out,from=export,rewrite-timestamp=true,force-compression=true
+
 
       - name: Export binaries per platform
         env:
-          DOCKERFILE: ${{ inputs.dockerfile }}
-          CONTEXT: ${{ inputs.context }}
           PLATFORMS: ${{ steps.platforms.outputs.platforms }}
-          BUILD_ARGS_RAW: ${{ env.BUILD_ARGS_RAW }}
         run: |
           set -euo pipefail
 
+          # Ensure platform list is available
           if [[ -z "${PLATFORMS:-}" ]]; then
             echo "No target platforms available for export" >&2
             exit 1
           fi
 
-          mapfile -t BUILD_ARGS < <(printf "%s\n" "${BUILD_ARGS_RAW:-}" | sed 's/\r$//' | sed '/^\s*$/d')
+          # Ensure the ./out directory produced by the previous build step exists
+          if [[ ! -d out ]]; then
+            echo "Missing ./out directory created by the build step" >&2
+            exit 1
+          fi
+
           mkdir -p build/runtime
           printf '%s\n' "$PLATFORMS" | tr ',' '\n' > build/runtime/PLATFORMS
 
@@ -234,31 +239,39 @@ jobs:
           for PLATFORM in "${PLATFORM_LIST[@]}"; do
             PLATFORM_TRIMMED="$(echo "$PLATFORM" | xargs)"
             [[ -z "$PLATFORM_TRIMMED" ]] && continue
+
+            # Internal representation: linux/amd64 -> linux-amd64
             PLATFORM_KEY="${PLATFORM_TRIMMED//\//-}"
+
+            # Output folder from buildx: linux/amd64 -> linux_amd64
+            PLATFORM_OUT="${PLATFORM_TRIMMED//\//_}"
+
+            SRC="out/${PLATFORM_OUT}"
             DEST="build/runtime/${PLATFORM_KEY}"
-            rm -rf "$DEST"
-            mkdir -p "$DEST"
 
-            ARGS=()
-            for ARG in "${BUILD_ARGS[@]}"; do
-              ARG_TRIMMED="$(echo "$ARG" | xargs)"
-              [[ -z "$ARG_TRIMMED" ]] && continue
-              ARGS+=("--build-arg" "$ARG_TRIMMED")
-            done
+            echo "Processing platform ${PLATFORM_TRIMMED}"
+            echo " - Source: ${SRC}"
+            echo " - Dest:   ${DEST}"
 
-            echo "Exporting binaries for ${PLATFORM_TRIMMED} -> ${DEST}"
-            docker buildx build \
-              --file "$DOCKERFILE" \
-              --platform "$PLATFORM_TRIMMED" \
-              --target export \
-              --output "type=local,dest=${DEST},rewrite-timestamp=true,force-compression=true" \
-              "${ARGS[@]}" \
-              "$CONTEXT"
-
-            if [[ ! -s "${DEST}/zallet" ]]; then
-              echo "Export failed for ${PLATFORM_TRIMMED}: missing zallet binary" >&2
+            # Ensure the source directory exists for this platform
+            if [[ ! -d "${SRC}" ]]; then
+              echo "Output folder for ${PLATFORM_TRIMMED} not found at ${SRC}" >&2
               exit 1
             fi
+
+            rm -rf "${DEST}"
+            mkdir -p "${DEST}"
+
+            # Copy all files produced in the 'export' stage for this platform
+            cp -a "${SRC}/." "${DEST}/"
+
+            # Validate expected binary exists
+            if [[ ! -s "${DEST}/zallet" ]]; then
+              echo "Missing zallet binary for ${PLATFORM_TRIMMED} in ${DEST}" >&2
+              exit 1
+            fi
+
+            echo "Export completed for ${PLATFORM_TRIMMED}"
           done
 
       - name: Install Cosign
