@@ -186,6 +186,15 @@ jobs:
             mv "$TAR_PATH" "$DEST"
           fi
 
+      - name: Convert OCI archive to docker format
+        run: |
+          set -euo pipefail
+          SRC="build/oci/${IMAGE_NAME}.tar"
+          TMP="${SRC}.docker"
+          SOURCE_REF="oci-archive:${SRC}:latest"
+          skopeo copy "$SOURCE_REF" "docker-archive:${TMP}:${IMAGE_NAME}:latest"
+          mv "$TMP" "$SRC"
+
       - name: Import runtime image via Makefile
         run: make import
         env:
