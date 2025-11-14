@@ -1,4 +1,4 @@
-name: Build and deploy Debian packages
+name: Attest, Sign and Release binaries and Build, Attest, Sign and Release 
 
 on:
   workflow_call:
@@ -101,12 +101,12 @@ jobs:
           arch_map = {
               "amd64": {
                   "arch": "amd64",
-                  "target": "x86_64-unknown-linux-gnu",
+                  "target": "x86_64-unknown-linux-musl",
                   "suffix": "linux-amd64",
               },
               "arm64": {
                   "arch": "arm64",
-                  "target": "aarch64-unknown-linux-gnu",
+                  "target": "aarch64-unknown-linux-musl",
                   "suffix": "linux-arm64",
               },
           }
@@ -240,10 +240,10 @@ jobs:
         run: |
           set -euo pipefail
           PLATFORM_KEY="${{ matrix.platform_key }}"
-          ARTIFACT_ROOT="build/runtime-artifact/${OCI_ARTIFACT_NAME}/build/runtime/${PLATFORM_KEY}"
+          ARTIFACT_ROOT="build/runtime-artifact/${PLATFORM_KEY}"
           if [[ ! -d "$ARTIFACT_ROOT" ]]; then
             echo "Unable to find binaries for ${PLATFORM_KEY} under ${ARTIFACT_ROOT}" >&2
-            find "build/runtime-artifact/${OCI_ARTIFACT_NAME}" -maxdepth 4 -type d || true
+            find "build/runtime-artifact" -maxdepth 4 -type d || true
             exit 1
           fi
           if [[ ! -s "${ARTIFACT_ROOT}/zallet" || ! -s "${ARTIFACT_ROOT}/zallet.bash" ]]; then
@@ -321,14 +321,18 @@ jobs:
         run: |
           cp -- "$BUNDLE_PATH" "standalone/zallet-${RELEASE_VERSION}-${{ matrix.binary_suffix }}.intoto.jsonl"
 
-      - name: Seed cargo target tree with imported binary & completions
+      - name: Seed cargo target tree with imported binary
         run: |
           set -euo pipefail
           TARGET_DIR="target/${{ matrix.target }}/release"
           COMPLETIONS_DIR="${TARGET_DIR}/completions"
+          PLATFORM_KEY="${{ matrix.platform_key }}"
           mkdir -p "$TARGET_DIR" "$COMPLETIONS_DIR"
-          install -m 0755 "build/${{ matrix.platform_key }}/zallet" "$TARGET_DIR/zallet"
-          install -m 0644 "build/${{ matrix.platform_key }}/zallet.bash" "$COMPLETIONS_DIR/zallet.bash"
+          # Seed main binary for cargo-deb --no-build
+          install -m 0755 "build/${PLATFORM_KEY}/zallet" "$TARGET_DIR/zallet"
+          # Seed bash completion for cargo-deb assets
+          install -m 0644 "build/${PLATFORM_KEY}/zallet.bash" "${COMPLETIONS_DIR}/zallet.bash"
+
 
       - name: Build package (cargo deb --no-build)
         run: |

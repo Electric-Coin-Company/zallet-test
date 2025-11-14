@@ -1,4 +1,4 @@
-name: Build, Attest & Sign Docker Image
+name: Build, Attest, Sign and publish Docker Image
 
 on:
   workflow_call:
@@ -211,68 +211,76 @@ jobs:
           provenance: mode=max
           outputs: |
             type=registry,rewrite-timestamp=true,force-compression=true
-            type=local,dest=./out,from=export,rewrite-timestamp=true,force-compression=true
 
+      - name: Build export stage (local artifacts)
+        id: build_export
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          file: ${{ inputs.dockerfile }}
+          context: ${{ inputs.context }}
+          push: false
+          platforms: ${{ steps.platforms.outputs.platforms }}
+          tags: ${{ env.tags_fixed }}
+          build-args: ${{ inputs['build-args'] }}
+          target: export
+          outputs: |
+            type=local,dest=./out,rewrite-timestamp=true,force-compression=true
 
-      - name: Export binaries per platform
-        env:
-          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
+      - name: Collect runtime binaries per platform
         run: |
           set -euo pipefail
 
-          # Ensure platform list is available
-          if [[ -z "${PLATFORMS:-}" ]]; then
-            echo "No target platforms available for export" >&2
-            exit 1
-          fi
+          # Primary platform detected by the earlier normalization step
+          PRIMARY="${{ steps.platforms.outputs.primary }}"
 
-          # Ensure the ./out directory produced by the previous build step exists
-          if [[ ! -d out ]]; then
-            echo "Missing ./out directory created by the build step" >&2
-            exit 1
-          fi
+          # Map platform → suffix (adjust to match your arch_map if needed)
+          map_suffix() {
+            local plat="$1"
+            case "$plat" in
+              linux/amd64|linux_amd64) echo "linux-amd64" ;;
+              linux/arm64|linux_arm64) echo "linux-arm64" ;;
+              *)
+                # Default fallback: replace slashes with dashes
+                echo "${plat//\//-}"
+                ;;
+            esac
+          }
 
+          # Create final output root directory
           mkdir -p build/runtime
-          printf '%s\n' "$PLATFORMS" | tr ',' '\n' > build/runtime/PLATFORMS
 
-          IFS=',' read -ra PLATFORM_LIST <<< "$PLATFORMS"
-          for PLATFORM in "${PLATFORM_LIST[@]}"; do
-            PLATFORM_TRIMMED="$(echo "$PLATFORM" | xargs)"
-            [[ -z "$PLATFORM_TRIMMED" ]] && continue
+          # Check if the output directory contains multi-platform subdirectories
+          if ls out/*_* >/dev/null 2>&1; then
+            echo "Detected multi-platform output under ./out"
 
-            # Internal representation: linux/amd64 -> linux-amd64
-            PLATFORM_KEY="${PLATFORM_TRIMMED//\//-}"
+            # Iterate through subdirectories such as out/linux_amd64, out/linux_arm64, etc.
+            for dir in out/*; do
+              [ -d "$dir" ] || continue
 
-            # Output folder from buildx: linux/amd64 -> linux_amd64
-            PLATFORM_OUT="${PLATFORM_TRIMMED//\//_}"
+              # Extract platform directory name (e.g. linux_amd64)
+              plat_dir="${dir#out/}"
+              # Convert platform into normalized suffix (e.g. linux-amd64)
+              suffix="$(map_suffix "$plat_dir")"
+              echo "Collecting artifacts for platform '$plat_dir' → suffix '$suffix'"
+              # Create target directory inside build/runtime/
+              mkdir -p "build/runtime/$suffix"
+              # Copy all artifacts from this platform directory
+              cp -a "$dir/." "build/runtime/$suffix/"
+            done
 
-            SRC="out/${PLATFORM_OUT}"
-            DEST="build/runtime/${PLATFORM_KEY}"
+          else
+            echo "Detected single-platform output under ./out"
+            # Use the primary platform reported by the 'platforms' step (e.g. linux/amd64)
+            plat="$PRIMARY"
+            # Convert it to the normalized suffix
+            suffix="$(map_suffix "$plat")"
+            echo "Collecting artifacts for platform '$plat' → suffix '$suffix'"
+            # Create platform-specific directory
+            mkdir -p "build/runtime/$suffix"
+            # Copy everything from the flat ./out/ export directory
+            cp -a out/. "build/runtime/$suffix/"
+          fi
 
-            echo "Processing platform ${PLATFORM_TRIMMED}"
-            echo " - Source: ${SRC}"
-            echo " - Dest:   ${DEST}"
-
-            # Ensure the source directory exists for this platform
-            if [[ ! -d "${SRC}" ]]; then
-              echo "Output folder for ${PLATFORM_TRIMMED} not found at ${SRC}" >&2
-              exit 1
-            fi
-
-            rm -rf "${DEST}"
-            mkdir -p "${DEST}"
-
-            # Copy all files produced in the 'export' stage for this platform
-            cp -a "${SRC}/." "${DEST}/"
-
-            # Validate expected binary exists
-            if [[ ! -s "${DEST}/zallet" ]]; then
-              echo "Missing zallet binary for ${PLATFORM_TRIMMED} in ${DEST}" >&2
-              exit 1
-            fi
-
-            echo "Export completed for ${PLATFORM_TRIMMED}"
-          done
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
