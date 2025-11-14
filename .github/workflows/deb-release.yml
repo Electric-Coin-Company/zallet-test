@@ -87,42 +87,50 @@ jobs:
         run: |
           set -euo pipefail
           MATRIX_JSON=$(
-            python3 <<'PY'
-            import json
-            import os
-            import sys
+          python3 << 'PY'
+          import json
+          import os
 
-            raw = os.environ.get("PLATFORM_SPEC", "").replace("\r", "")
-            debian_fallback = os.environ.get("MATRIX_DEBIAN", "bullseye").strip() or "bullseye"
-            tokens = [tok.strip() for tok in raw.replace("\n", ",").split(",") if tok.strip()]
-            if not tokens:
-                raise SystemExit("Platform list cannot be empty")
+          raw = os.environ.get("PLATFORM_SPEC", "").replace("\r", "")
+          debian_fallback = os.environ.get("MATRIX_DEBIAN", "bullseye").strip() or "bullseye"
 
-                        arch_map = {
-                            "amd64": {"arch": "amd64", "target": "x86_64-unknown-linux-gnu", "suffix": "linux-amd64"},
-                            "arm64": {"arch": "arm64", "target": "aarch64-unknown-linux-gnu", "suffix": "linux-arm64"},
-                        }
+          tokens = [tok.strip() for tok in raw.replace("\n", ",").split(",") if tok.strip()]
+          if not tokens:
+              raise SystemExit("Platform list cannot be empty")
 
-                        entries = []
-                        for platform in tokens:
-                            parts = platform.split("/")
-                            if len(parts) != 2 or parts[0] != "linux":
-                                raise SystemExit(f"Unsupported platform '{platform}'")
-                            arch = parts[1]
-                            if arch not in arch_map:
-                                raise SystemExit(f"Unsupported architecture '{arch}' in platform '{platform}'")
-                mapping = arch_map[arch]
-                entries.append({
-                    "platform": platform,
-                    "platform_key": platform.replace("/", "-"),
-                    "arch": mapping["arch"],
-                    "target": mapping["target"],
-                    "binary_suffix": mapping["suffix"],
-                    "debian": debian_fallback
-                })
+          arch_map = {
+              "amd64": {
+                  "arch": "amd64",
+                  "target": "x86_64-unknown-linux-gnu",
+                  "suffix": "linux-amd64",
+              },
+              "arm64": {
+                  "arch": "arm64",
+                  "target": "aarch64-unknown-linux-gnu",
+                  "suffix": "linux-arm64",
+              },
+          }
 
-            print(json.dumps(entries))
-            PY
+          entries = []
+          for platform in tokens:
+              parts = platform.split("/")
+              if len(parts) != 2 or parts[0] != "linux":
+                  raise SystemExit(f"Unsupported platform '{platform}'")
+              arch = parts[1]
+              if arch not in arch_map:
+                  raise SystemExit(f"Unsupported architecture '{arch}' in platform '{platform}'")
+              mapping = arch_map[arch]
+              entries.append({
+                  "platform": platform,
+                  "platform_key": platform.replace("/", "-"),
+                  "arch": mapping["arch"],
+                  "target": mapping["target"],
+                  "binary_suffix": mapping["suffix"],
+                  "debian": debian_fallback,
+              })
+
+          print(json.dumps(entries))
+          PY
           )
           echo "matrix=${MATRIX_JSON}" >> "$GITHUB_OUTPUT"
 
