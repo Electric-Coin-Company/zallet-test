@@ -11,8 +11,8 @@ on:
         description: "Source commit SHA"
         required: true
         type: string
-      oci-artifact-name:
-        description: "Name of the OCI runtime image artifact to consume"
+      docker-artifact-name:
+        description: "Name of the docker runtime image artifact to consume"
         required: true
         type: string
       image-tag:
@@ -38,8 +38,8 @@ on:
         description: "Source commit SHA"
         required: true
         type: string
-      oci-artifact-name:
-        description: "Name of the OCI runtime image artifact to consume"
+      docker-artifact-name:
+        description: "Name of the docker runtime image artifact to consume"
         required: true
         type: string
       image-tag:
@@ -100,7 +100,7 @@ jobs:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
       RELEASE_SHA: ${{ inputs.git-sha || github.sha }}
       IMAGE_TAG: ${{ inputs.image-tag }}
-      OCI_ARTIFACT_NAME: ${{ inputs.oci-artifact-name }}
+      DOCKER_ARTIFACT_NAME: ${{ inputs.docker-artifact-name }}
       IMAGE_NAME: ${{ inputs.image-name }}
 
     steps:
@@ -162,44 +162,36 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb
 
-      - name: Prepare OCI artifact workspace
-        run: mkdir -p build/oci
+      - name: Prepare docker artifact workspace
+        run: mkdir -p build/docker
 
-      - name: Download runtime OCI artifact
+      - name: Download runtime docker artifact
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
-          name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: build/oci
+          name: ${{ env.DOCKER_ARTIFACT_NAME }}
+          path: build/docker
 
-      - name: Normalize runtime OCI archive path
-        run: |
-          set -euo pipefail
-          TAR_PATH="$(find build/oci -type f -name '*.tar' | head -n 1 || true)"
-          if [[ -z "$TAR_PATH" ]]; then
-            echo "Unable to locate downloaded OCI archive under build/oci" >&2
-            find build/oci -maxdepth 3 -type f -print || true
-            exit 1
-          fi
-          DEST="build/oci/${IMAGE_NAME}.tar"
-          if [[ "$TAR_PATH" != "$DEST" ]]; then
-            rm -f "$DEST"
-            mv "$TAR_PATH" "$DEST"
-          fi
-
-      - name: Convert OCI archive to docker format
-        run: |
-          set -euo pipefail
-          SRC="build/oci/${IMAGE_NAME}.tar"
-          TMP="${SRC}.docker"
-          SOURCE_REF="oci-archive:${SRC}:latest"
-          skopeo copy "$SOURCE_REF" "docker-archive:${TMP}:${IMAGE_NAME}:latest"
-          mv "$TMP" "$SRC"
+      # - name: Normalize runtime docker archive path
+      #   run: |
+      #     set -euo pipefail
+      #     TAR_PATH="$(find build/docker -type f -name '*.tar' | head -n 1 || true)"
+      #     if [[ -z "$TAR_PATH" ]]; then
+      #       echo "Unable to locate downloaded docker archive under build/docker" >&2
+      #       find build/docker -maxdepth 3 -type f -print || true
+      #       exit 1
+      #     fi
+      #     DEST="build/docker/${IMAGE_NAME}.tar"
+      #     if [[ "$TAR_PATH" != "$DEST" ]]; then
+      #       rm -f "$DEST"
+      #       mv "$TAR_PATH" "$DEST"
+      #     fi
 
       - name: Import runtime image via Makefile
         run: make import
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          ARTIFACT_SRC: "build/docker"
 
       - name: Extract binary from imported runtime image
         run: |
