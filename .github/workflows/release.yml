@@ -46,21 +46,21 @@ jobs:
       dockerfile: Dockerfile
       context: .
       build-args: ""
-      oci-artifact-name: ${{ format('zallet-runtime-oci-{0}', github.run_id) }}
+      docker-artifact-name: ${{ format('zallet-runtime-docker-{0}', github.run_id) }}
     secrets:
       dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
       dockerhub_password: ${{ secrets.DOCKERHUB_PASSWORD }}
       dockerhub_registry: ${{ secrets.DOCKERHUB_REGISTRY }}
 
   deb_release:
-    name: Build Debian packages from OCI artifact
+    name: Build Debian packages from docker artifact
     needs: [set_env, container]
     if: needs.set_env.outputs.should_run == 'true'
     uses: ./.github/workflows/deb-release.yml
     with:
       version: ${{ github.ref_name }}
       git-sha: ${{ github.sha }}
-      oci-artifact-name: ${{ needs.container.outputs.oci-artifact-name }}
+      docker-artifact-name: ${{ needs.container.outputs.docker-artifact-name }}
       image-tag: ${{ github.ref_name }}
       image-name: zallet-test
     secrets:
