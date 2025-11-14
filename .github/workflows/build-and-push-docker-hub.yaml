@@ -9,9 +9,9 @@ on:
       image-digest:
         description: "Content digest of the pushed image"
         value: ${{ jobs.build-and-push.outputs.image-digest }}
-      oci-artifact-name:
-        description: "Name of the exported runtime OCI artifact"
-        value: ${{ jobs.build-and-push.outputs.oci-artifact-name }}
+      docker-artifact-name:
+        description: "Name of the exported runtime docker artifact"
+        value: ${{ jobs.build-and-push.outputs.docker-artifact-name }}
     inputs:
       image_name:
         description: "Docker image name (e.g. user/repo)"
@@ -33,10 +33,10 @@ on:
         description: "Docker build args (one per line, optional)"
         required: true
         type: string
-      oci-artifact-name:
-        description: "Artifact name for the exported OCI runtime image"
+      docker-artifact-name:
+        description: "Artifact name for the exported docker runtime image"
         required: false
-        default: zallet-runtime-oci
+        default: zallet-runtime-docker
         type: string
     secrets:
       dockerhub_registry:
@@ -70,8 +70,8 @@ on:
         description: "Docker build args (one per line, optional)"
         required: true
         type: string
-      oci-artifact-name:
-        description: "Artifact name for the exported OCI runtime image"
+      docker-artifact-name:
+        description: "Artifact name for the exported docker runtime image"
         required: true
         type: string
 
@@ -88,11 +88,11 @@ jobs:
       IMAGE_NAMESPACE: ${{ secrets.dockerhub_registry }}
       IMAGE_NAME: ${{ inputs.image_name }}
       BUILD_ARGS_RAW: ${{ inputs['build-args'] }}
-      OCI_ARTIFACT_NAME: ${{ inputs.oci-artifact-name }}
+      DOCKER_ARTIFACT_NAME: ${{ inputs.docker-artifact-name }}
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-ref: ${{ steps.emit.outputs.image_ref }}
-      oci-artifact-name: ${{ steps.emit.outputs.artifact_name }}
+      docker-artifact-name: ${{ steps.emit.outputs.artifact_name }}
     steps:
       - name: Determine image repository
         run: |
@@ -166,8 +166,8 @@ jobs:
           sbom: true
           provenance: mode=max
           outputs: |
-            type=registry
-            type=oci,dest=build/oci/${{ env.IMAGE_NAME }}.tar,name=${{ env.IMAGE_NAME }},rewrite-timestamp=true,force-compression=true
+            type=registry,rewrite-timestamp=true,force-compression=true
+            type=docker,dest=build/docker/${{ env.IMAGE_NAME }}.tar,rewrite-timestamp=true,force-compression=true
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
@@ -188,18 +188,18 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
-      - name: Upload OCI runtime artifact
+      - name: Upload docker runtime artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: ${{ env.OCI_ARTIFACT_NAME }}
-          path: build/oci/${{ env.IMAGE_NAME }}.tar
+          name: ${{ env.DOCKER_ARTIFACT_NAME }}
+          path: build/docker/${{ env.IMAGE_NAME }}.tar
           if-no-files-found: error
 
       - name: Emit workflow outputs
         id: emit
         run: |
           echo "image_ref=${IMAGE_FULL_NAME}" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=${OCI_ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${DOCKER_ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
         env:
           IMAGE_FULL_NAME: ${{ env.IMAGE_FULL_NAME }}
-          OCI_ARTIFACT_NAME: ${{ env.OCI_ARTIFACT_NAME }}
+          DOCKER_ARTIFACT_NAME: ${{ env.DOCKER_ARTIFACT_NAME }}
