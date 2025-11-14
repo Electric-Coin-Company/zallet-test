@@ -81,7 +81,6 @@ COPY --from=musl /lib/ld-musl-x86_64.so.1 /lib/
 COPY --from=libunwind /lib/libunwind.so.8 /lib/
 COPY --from=builder /usr/local/bin/zallet /usr/local/bin/zallet
 
-
 WORKDIR /var/lib/zallet
 
 ENTRYPOINT ["zallet"]
