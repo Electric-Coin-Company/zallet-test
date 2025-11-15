@@ -254,8 +254,8 @@ jobs:
           # Prepare per-platform staging directory (including /usr/local for rsync)
           mkdir -p "build/${PLATFORM_KEY}/usr/local"
 
-          # Store the binary in a stable place for later steps
-          cp "${ARTIFACT_ROOT}/zallet" "build/${PLATFORM_KEY}/zallet"
+          # Store the binary in a stable place for later steps, and force executable perms
+          install -m 0755 "${ARTIFACT_ROOT}/zallet" "build/${PLATFORM_KEY}/zallet"
 
           # Copy the usr/local tree as-is (completions, manpages, docs, etc.)
           # If there is no usr/local in the artifact, this won't fail because of '|| true'
