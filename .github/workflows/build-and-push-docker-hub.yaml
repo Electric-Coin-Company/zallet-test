@@ -226,7 +226,7 @@ jobs:
           outputs: |
             type=local,dest=./out,rewrite-timestamp=true,force-compression=true
 
-      - name: Collect runtime binaries per platform
+      - name: Collect runtime artifacts per platform
         run: |
           set -euo pipefail
 

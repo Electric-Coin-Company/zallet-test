@@ -240,22 +240,22 @@ jobs:
       - name: Stage exported binaries
         run: |
           set -euo pipefail
+
           PLATFORM_KEY="${{ matrix.platform_key }}"
           ARTIFACT_ROOT="build/runtime-artifact/${PLATFORM_KEY}"
-          if [[ ! -d "$ARTIFACT_ROOT" ]]; then
-            echo "Unable to find binaries for ${PLATFORM_KEY} under ${ARTIFACT_ROOT}" >&2
-            find "build/runtime-artifact" -maxdepth 4 -type d || true
-            exit 1
-          fi
-          if [[ ! -s "${ARTIFACT_ROOT}/zallet" || ! -s "${ARTIFACT_ROOT}/zallet.bash" ]]; then
-            echo "Artifact directory ${ARTIFACT_ROOT} is missing zallet or completions" >&2
-            find "$ARTIFACT_ROOT" -maxdepth 1 -type f || true
+
+          # Basic sanity check: ensure the exported binary exists
+          if [[ ! -s "${ARTIFACT_ROOT}/usr/local/bin/zallet" ]]; then
+            echo "Missing zallet binary under ${ARTIFACT_ROOT}" >&2
+            find "${ARTIFACT_ROOT}" -maxdepth 5 || true
             exit 1
           fi
 
+          # Prepare per-platform staging directory and copy the usr/local tree as-is
           mkdir -p "build/${PLATFORM_KEY}"
-          install -m 0755 "${ARTIFACT_ROOT}/zallet" "build/${PLATFORM_KEY}/zallet"
-          install -m 0644 "${ARTIFACT_ROOT}/zallet.bash" "build/${PLATFORM_KEY}/zallet.bash"
+
+          # rsync is used to copy the full usr/local tree without listing individual files
+          rsync -a "${ARTIFACT_ROOT}/usr/local/" "build/${PLATFORM_KEY}/usr/local/"
 
       - name: Smoke test exported binary
         run: |
@@ -325,15 +325,44 @@ jobs:
       - name: Seed cargo target tree with imported binary
         run: |
           set -euo pipefail
-          TARGET_DIR="target/${{ matrix.target }}/release"
-          COMPLETIONS_DIR="${TARGET_DIR}/completions"
-          PLATFORM_KEY="${{ matrix.platform_key }}"
-          mkdir -p "$TARGET_DIR" "$COMPLETIONS_DIR"
-          # Seed main binary for cargo-deb --no-build
-          install -m 0755 "build/${PLATFORM_KEY}/zallet" "$TARGET_DIR/zallet"
-          # Seed bash completion for cargo-deb assets
-          install -m 0644 "build/${PLATFORM_KEY}/zallet.bash" "${COMPLETIONS_DIR}/zallet.bash"
 
+          PLATFORM_KEY="${{ matrix.platform_key }}"
+          TARGET_TRIPLE="${{ matrix.target }}"
+
+          # Root where the export stage installed everything under /usr/local
+          ROOT="build/${PLATFORM_KEY}/usr/local"
+
+          TARGET_DIR="target/${TARGET_TRIPLE}/release"
+          COMPLETIONS_DIR="${TARGET_DIR}/completions"
+          MANPAGES_DIR="${TARGET_DIR}/manpages/man1"
+
+          # Create the target directories expected by cargo-deb
+          mkdir -p "${TARGET_DIR}" "${COMPLETIONS_DIR}" "${MANPAGES_DIR}"
+
+          # Seed main binary for cargo-deb --no-build
+          install -m 0755 "${ROOT}/bin/zallet" "${TARGET_DIR}/zallet"
+
+          # Copy *all* completion files into a flat completions/ directory
+          # This matches cargo-deb assets like:
+          #   target/release/completions/zallet.bash
+          #   target/release/completions/zallet.fish
+          #   target/release/completions/zallet.elv
+          #   target/release/completions/_zallet
+          cp "${ROOT}/share/bash-completion/completions/"* "${COMPLETIONS_DIR}/" 2>/dev/null || true
+          cp "${ROOT}/share/elvish/lib/"*                   "${COMPLETIONS_DIR}/" 2>/dev/null || true
+          cp "${ROOT}/share/fish/vendor_completions.d/"*    "${COMPLETIONS_DIR}/" 2>/dev/null || true
+          cp "${ROOT}/share/zsh/vendor-completions/"*       "${COMPLETIONS_DIR}/" 2>/dev/null || true
+
+          # Copy manpages into target/.../release/manpages/** so the cargo-deb glob matches
+          if [[ -d "${ROOT}/share/man/man1" ]]; then
+            cp "${ROOT}/share/man/man1/"* "${MANPAGES_DIR}/" 2>/dev/null || true
+          fi
+
+          # Copy Debian copyright metadata if present
+          if [[ -f "${ROOT}/share/doc/zallet/copyright" ]]; then
+            install -m 0644 "${ROOT}/share/doc/zallet/copyright" \
+              "${TARGET_DIR}/debian-copyright"
+          fi
 
       - name: Build package (cargo deb --no-build)
         run: |
