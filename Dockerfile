@@ -50,7 +50,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --target ${TARGET_ARCH} \
       --features rpc-cli,zcashd-import
 
-
 # Copy the rest
 COPY . .
 # Build the zallet binary
