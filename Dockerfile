@@ -48,9 +48,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --network=none \
     cargo build --release --frozen \
       --target ${TARGET_ARCH} \
-      --features rpc-cli,zcashd-import \
-      && install -D -m 0644 /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.bash \
-           /usr/local/share/zallet/completions/zallet.bash
+      --features rpc-cli,zcashd-import
+
 
 # Copy the rest
 COPY . .
@@ -64,8 +63,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --bin zallet \
       --target ${TARGET_ARCH} \
       --features rpc-cli,zcashd-import \
-      && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zallet /usr/local/bin/zallet
-
+      && install -D -m 0755 /usr/src/app/target/${TARGET_ARCH}/release/zallet /usr/local/bin/zallet \
+      && install -D -m 0644 /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.bash \
+           /usr/local/share/zallet/completions/zallet.bash
 
 # --- Stage 2: layer for local binary extraction ---
 FROM scratch AS export
