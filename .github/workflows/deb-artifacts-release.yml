@@ -244,18 +244,23 @@ jobs:
           PLATFORM_KEY="${{ matrix.platform_key }}"
           ARTIFACT_ROOT="build/runtime-artifact/${PLATFORM_KEY}"
 
-          # Basic sanity check: ensure the exported binary exists
-          if [[ ! -s "${ARTIFACT_ROOT}/usr/local/bin/zallet" ]]; then
+          # Basic sanity check: ensure the exported binary exists at the root (as /zallet in the export image)
+          if [[ ! -s "${ARTIFACT_ROOT}/zallet" ]]; then
             echo "Missing zallet binary under ${ARTIFACT_ROOT}" >&2
             find "${ARTIFACT_ROOT}" -maxdepth 5 || true
             exit 1
           fi
 
-          # Prepare per-platform staging directory and copy the usr/local tree as-is
+          # Prepare per-platform staging directory
           mkdir -p "build/${PLATFORM_KEY}"
 
-          # rsync is used to copy the full usr/local tree without listing individual files
-          rsync -a "${ARTIFACT_ROOT}/usr/local/" "build/${PLATFORM_KEY}/usr/local/"
+          # Store the binary in a stable place for later steps
+          cp "${ARTIFACT_ROOT}/zallet" "build/${PLATFORM_KEY}/zallet"
+
+          # Copy the usr/local tree as-is (completions, manpages, docs, etc.)
+          if [[ -d "${ARTIFACT_ROOT}/usr/local" ]]; then
+            rsync -a "${ARTIFACT_ROOT}/usr/local/" "build/${PLATFORM_KEY}/usr/local/"
+          fi
 
       - name: Smoke test exported binary
         run: |
@@ -322,47 +327,35 @@ jobs:
         run: |
           cp -- "$BUNDLE_PATH" "standalone/zallet-${RELEASE_VERSION}-${{ matrix.binary_suffix }}.intoto.jsonl"
 
-      - name: Seed cargo target tree with imported binary
+      - name: Seed cargo target tree with the imported artifacts
         run: |
           set -euo pipefail
 
           PLATFORM_KEY="${{ matrix.platform_key }}"
           TARGET_TRIPLE="${{ matrix.target }}"
 
-          # Root where the export stage installed everything under /usr/local
-          ROOT="build/${PLATFORM_KEY}/usr/local"
+          # Root where the export stage stored all Zallet assets under /usr/local/share/zallet
+          ROOT="build/${PLATFORM_KEY}/usr/local/share/zallet"
 
           TARGET_DIR="target/${TARGET_TRIPLE}/release"
           COMPLETIONS_DIR="${TARGET_DIR}/completions"
-          MANPAGES_DIR="${TARGET_DIR}/manpages/man1"
+          MANPAGES_DIR="${TARGET_DIR}/manpages"
 
-          # Create the target directories expected by cargo-deb
           mkdir -p "${TARGET_DIR}" "${COMPLETIONS_DIR}" "${MANPAGES_DIR}"
 
-          # Seed main binary for cargo-deb --no-build
-          install -m 0755 "${ROOT}/bin/zallet" "${TARGET_DIR}/zallet"
+          # Seed binary for cargo-deb --no-build
+          install -m 0755 "build/${PLATFORM_KEY}/zallet" "${TARGET_DIR}/zallet"
 
-          # Copy *all* completion files into a flat completions/ directory
-          # This matches cargo-deb assets like:
-          #   target/release/completions/zallet.bash
-          #   target/release/completions/zallet.fish
-          #   target/release/completions/zallet.elv
-          #   target/release/completions/_zallet
-          cp "${ROOT}/share/bash-completion/completions/"* "${COMPLETIONS_DIR}/" 2>/dev/null || true
-          cp "${ROOT}/share/elvish/lib/"*                   "${COMPLETIONS_DIR}/" 2>/dev/null || true
-          cp "${ROOT}/share/fish/vendor_completions.d/"*    "${COMPLETIONS_DIR}/" 2>/dev/null || true
-          cp "${ROOT}/share/zsh/vendor-completions/"*       "${COMPLETIONS_DIR}/" 2>/dev/null || true
+          # Copy the whole completions tree (whatever is inside)
+          cp -a "${ROOT}/completions/." "${COMPLETIONS_DIR}/" 2>/dev/null || true
 
-          # Copy manpages into target/.../release/manpages/** so the cargo-deb glob matches
-          if [[ -d "${ROOT}/share/man/man1" ]]; then
-            cp "${ROOT}/share/man/man1/"* "${MANPAGES_DIR}/" 2>/dev/null || true
-          fi
+          # Copy the whole manpages tree
+          cp -a "${ROOT}/manpages/." "${MANPAGES_DIR}/" 2>/dev/null || true
 
-          # Copy Debian copyright metadata if present
-          if [[ -f "${ROOT}/share/doc/zallet/copyright" ]]; then
-            install -m 0644 "${ROOT}/share/doc/zallet/copyright" \
-              "${TARGET_DIR}/debian-copyright"
-          fi
+          # Copy Debian copyright metadata
+          install -m 0644 "${ROOT}/debian-copyright" \
+            "${TARGET_DIR}/debian-copyright" 2>/dev/null || true
+
 
       - name: Build package (cargo deb --no-build)
         run: |

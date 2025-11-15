@@ -62,46 +62,29 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --bin zallet \
       --target ${TARGET_ARCH} \
       --features rpc-cli,zcashd-import \
+    && OUT="/usr/src/app/target/${TARGET_ARCH}/release" \
     \
+    # Install main binary
     && install -D -m 0755 \
-         /usr/src/app/target/${TARGET_ARCH}/release/zallet \
+         "${OUT}/zallet" \
          /usr/local/bin/zallet \
     \
+    # Copy whole trees for completions, manpages and metadata
+    && install -d /usr/local/share/zallet \
+    && cp -a "${OUT}/completions" /usr/local/share/zallet/completions \
+    && cp -a "${OUT}/manpages"  /usr/local/share/zallet/manpages \
     && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.bash \
-         /usr/local/share/bash-completion/completions/zallet \
-    \
-    && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.elv \
-         /usr/local/share/elvish/lib/zallet.elv \
-    \
-    && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/completions/zallet.fish \
-         /usr/local/share/fish/vendor_completions.d/zallet.fish \
-    \
-    && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/completions/_zallet \
-         /usr/local/share/zsh/vendor-completions/_zallet \
-    \
-    && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/manpages/man1/zallet.1.gz \
-         /usr/local/share/man/man1/zallet.1.gz \
-    \
-    && install -D -m 0644 \
-         /usr/src/app/target/${TARGET_ARCH}/release/debian-copyright \
-         /usr/local/share/doc/zallet/copyright
+         "${OUT}/debian-copyright" \
+         /usr/local/share/zallet/debian-copyright
 
 # --- Stage 2: layer for local binary extraction ---
 FROM scratch AS export
 
+# Binary at the root for easy extraction
 COPY --from=builder /usr/local/bin/zallet /zallet
-# Completarions
-COPY --from=builder /usr/local/share/bash-completion/completions /usr/local/share/bash-completion/completions
-COPY --from=builder /usr/local/share/elvish/lib /usr/local/share/elvish/lib
-COPY --from=builder /usr/local/share/fish/vendor_completions.d /usr/local/share/fish/vendor_completions.d
-COPY --from=builder /usr/local/share/zsh/vendor-completions /usr/local/share/zsh/vendor-completions
-# Manpages
-COPY --from=builder /usr/local/share/man /usr/local/share/man
+
+# Export the whole zallet share tree (completions, manpages, metadata, etc.)
+COPY --from=builder /usr/local/share/zallet /usr/local/share/zallet
 
 # --- Stage 3: Minimal runtime with stagex ---
 # `stagex/core-user-runtime` sets the user to non-root by default
