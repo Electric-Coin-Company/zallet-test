@@ -146,7 +146,8 @@ jobs:
       attestations: write
 
     strategy:
-      matrix: ${{ fromJson(needs.platform_matrix.outputs.matrix) }}
+      matrix:
+        include: ${{ fromJson(needs.platform_matrix.outputs.matrix) }}
 
     env:
       RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
