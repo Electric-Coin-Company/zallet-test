@@ -76,11 +76,11 @@ jobs:
       dockerhub_password: ${{ secrets.DOCKERHUB_PASSWORD }}
       dockerhub_registry: ${{ secrets.DOCKERHUB_REGISTRY }}
 
-  deb_release:
-    name: Build Debian packages from exported binaries
+  binaries_release:
+    name: Build standalone binaries and Debian packages
     needs: [set_env, container]
     if: needs.set_env.outputs.should_run == 'true'
-    uses: ./.github/workflows/deb-artifacts-release.yml
+    uses: ./.github/workflows/binaries-and-deb-release.yml
     with:
       version: ${{ github.ref_name }}
       git-sha: ${{ github.sha }}
