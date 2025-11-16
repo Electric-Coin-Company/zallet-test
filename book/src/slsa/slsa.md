@@ -19,7 +19,7 @@ Zallet’s release automation is designed to satisfy the latest [SLSA v1.0](http
 | Exported runtime bundle | GitHub Actions artifact (`zallet-runtime-oci-*`) | Detached from release, referenced for auditing |
 | Standalone binaries (`zallet-${VERSION}-linux-{amd64,arm64}`) | GitHub Release assets | GPG `.asc`, SPDX SBOM, `intoto.jsonl` provenance |
 | Debian packages (`zallet_${VERSION}_{amd64,arm64}.deb`) | GitHub Release assets + apt.z.cash | GPG `.asc`, SPDX SBOM, `intoto.jsonl` provenance |
-| apt.z.cash snapshots | Uploaded to GCS for approval | APT `Release.gpg`, package `.asc`, cosigned source artifacts |
+| APT repository | apt.z.cash | APT `Release.gpg`, package `.asc`, cosigned source artifacts |
 
 ## Targeted SLSA guarantees
 
