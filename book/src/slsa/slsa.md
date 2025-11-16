@@ -29,7 +29,7 @@ Zallet’s release automation is designed to satisfy the latest [SLSA v1.0](http
 
 ## Verification playbook
 
-The following sections cover every command required to validate a tagged release end-to-end (similar to [Argo CD’s signed release process](https://argo-cd.readthedocs.io/en/stable/operator-manual/signed-release-assets/), but tailored to the Zallet workflows and the SLSA v1.0 predicate).
+The following sections cover every command required to validate a tagged release end-to-end.
 
 ### Tooling prerequisites
 
